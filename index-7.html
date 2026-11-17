@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>PDF Reader</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0b0b0b; color: #fff; font-family: Arial, Helvetica, sans-serif; overflow: hidden; }
+  button, input { font-family: inherit; }
+
+  /* ---------- Library ---------- */
+  #home { height: 100%; overflow: auto; padding: 24px 40px; }
+  h1 { color: #ffd400; font-size: 34px; margin: 0 0 6px; }
+  .sub { color: #aaa; font-size: 18px; margin-bottom: 22px; }
+  .item { display: block; width: 100%; text-align: left; background: #1d1d1d; color: #fff; border: 3px solid #2e2e2e;
+          border-radius: 14px; padding: 18px 22px; margin-bottom: 12px; font-size: 24px; cursor: pointer; }
+  .item:focus, .item:hover { border-color: #ffd400; background: #2a2710; outline: none; }
+  .box { background: #181818; border: 2px solid #2e2e2e; border-radius: 14px; padding: 16px 20px; margin-top: 22px; }
+  .box label { display: block; color: #ffd400; font-size: 20px; margin-bottom: 8px; }
+  .box input[type=text] { width: 100%; font-size: 20px; padding: 10px; border-radius: 8px; border: 2px solid #444; background: #000; color: #fff; }
+  .box input[type=text]:focus { border-color: #ffd400; outline: none; }
+  .btn { background: #ffd400; color: #000; border: 3px solid #ffd400; border-radius: 10px; padding: 10px 20px;
+         font-size: 20px; font-weight: bold; cursor: pointer; margin-top: 10px; margin-right: 8px; }
+  .btn:focus { outline: none; border-color: #fff; }
+  #err { color: #ff6b6b; font-size: 20px; margin-top: 12px; }
+  .hint { color: #888; font-size: 16px; margin-top: 20px; line-height: 1.7; }
+
+  /* ---------- Viewer ---------- */
+  #viewer { display: none; position: fixed; left: 0; top: 0; right: 0; bottom: 0; }
+  #stage { position: absolute; left: 0; right: 0; top: 0; bottom: 0; overflow: auto; display: flex; background: #0b0b0b;
+           outline: none; cursor: grab; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; scrollbar-width: none; }
+  #stage::-webkit-scrollbar { display: none; }
+  body.ui #stage { top: 56px; }
+  #stage.grabbing { cursor: grabbing; }
+  #stage canvas { margin: auto; display: block; background: #fff; box-shadow: 0 4px 24px rgba(0,0,0,.7); }
+
+  #bar { display: none; position: absolute; left: 0; right: 0; top: 0; height: 56px; background: #161616;
+         border-bottom: 2px solid #2e2e2e; align-items: center; padding: 0 10px; overflow-x: auto; white-space: nowrap; z-index: 10; }
+  body.ui #bar { display: flex; }
+  .tb { background: #262626; color: #fff; border: 2px solid #3a3a3a; border-radius: 10px; padding: 7px 14px; margin-right: 6px;
+        font-size: 18px; font-weight: bold; cursor: pointer; min-width: 44px; flex: 0 0 auto; }
+  .tb:hover { background: #333; }
+  .tb:focus { outline: none; border-color: #ffd400; }
+  .tb.y { background: #ffd400; color: #000; border-color: #ffd400; }
+  .tb.y:focus { border-color: #fff; }
+  .sep { width: 2px; height: 30px; background: #333; margin: 0 8px 0 4px; flex: 0 0 auto; }
+  #pgIn { width: 64px; font-size: 18px; padding: 6px; text-align: center; border-radius: 8px; border: 2px solid #3a3a3a; background: #000; color: #ffd400; font-weight: bold; }
+  #pgIn:focus { border-color: #ffd400; outline: none; }
+  .lbl { color: #bbb; font-size: 18px; margin: 0 10px 0 6px; flex: 0 0 auto; }
+  #zl { color: #ffd400; font-size: 18px; font-weight: bold; min-width: 58px; text-align: center; flex: 0 0 auto; }
+  #title { color: #999; font-size: 16px; margin-left: 10px; overflow: hidden; text-overflow: ellipsis; max-width: 260px; flex: 0 1 auto; }
+
+  /* clock / timer */
+  #hud { display: none; position: absolute; right: 12px; top: 66px; z-index: 9; text-align: right; pointer-events: none; }
+  body.ui #hud { display: block; }
+  .pill { display: inline-block; background: rgba(0,0,0,.72); border: 2px solid #ffd400; color: #ffd400; border-radius: 12px;
+          padding: 6px 14px; font-size: 24px; font-weight: bold; margin-bottom: 6px; }
+  .pill.t { border-color: #4cd964; color: #4cd964; }
+
+  /* back (unhide) button */
+  #unhide { display: none; position: absolute; left: 12px; top: 12px; z-index: 20; background: rgba(0,0,0,.55); color: #fff;
+            border: 2px solid rgba(255,255,255,.6); border-radius: 10px; padding: 8px 16px; font-size: 18px; font-weight: bold; cursor: pointer; }
+  #unhide:focus, #unhide:hover { outline: none; background: #ffd400; color: #000; border-color: #ffd400; }
+  body.inview:not(.ui) #unhide { display: block; }
+
+  /* settings */
+  #settings { display: none; position: absolute; right: 0; top: 56px; bottom: 0; width: 400px; max-width: 94vw; background: #181818;
+              border-left: 2px solid #ffd400; z-index: 15; overflow-y: auto; padding: 16px 18px 30px; }
+  body.ui #settings.open { display: block; }
+  #settings h2 { margin: 0; color: #ffd400; font-size: 26px; }
+  #settings h3 { color: #fff; font-size: 20px; margin: 22px 0 8px; border-bottom: 1px solid #333; padding-bottom: 6px; }
+  .row { display: flex; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  #tmin { width: 90px; font-size: 26px; text-align: center; padding: 8px; border-radius: 8px; border: 2px solid #444; background: #000; color: #fff; margin: 0 8px; }
+  #tmin:focus { border-color: #ffd400; outline: none; }
+  .chip { background: #262626; color: #fff; border: 2px solid #3a3a3a; border-radius: 20px; padding: 6px 14px; margin: 0 6px 6px 0; font-size: 17px; cursor: pointer; }
+  .chip:focus { outline: none; border-color: #ffd400; }
+  .wide { display: block; width: 100%; text-align: left; margin: 0 0 8px; }
+  #tstat { color: #4cd964; font-size: 28px; font-weight: bold; margin: 10px 0; }
+
+  /* ring overlay */
+  #ring { display: none; position: fixed; left: 0; top: 0; right: 0; bottom: 0; background: rgba(0,0,0,.88); z-index: 100; text-align: center; padding-top: 14vh; }
+  #ring .big { font-size: 56px; color: #ffd400; font-weight: bold; margin-bottom: 8px; }
+  #ring .bell { font-size: 90px; display: inline-block; animation: sw .4s infinite alternate; }
+  @keyframes sw { from { transform: rotate(-18deg); } to { transform: rotate(18deg); } }
+  #ring .btn { font-size: 30px; padding: 16px 44px; margin-top: 28px; background: #ff4d4d; border-color: #ff4d4d; color: #fff; }
+  #ring .btn:focus { border-color: #fff; }
+
+  #msg { position: fixed; left: 0; right: 0; top: 45%; text-align: center; font-size: 30px; color: #ffd400; display: none; z-index: 50; pointer-events: none; text-shadow: 0 0 8px #000, 0 0 8px #000; }
+</style>
+</head>
+<body>
+
+<!-- ================= LIBRARY ================= -->
+<div id="home">
+  <h1>&#128218; My PDF Library</h1>
+  <div class="sub">Remote Up/Down se choose karo, OK dabao</div>
+  <div id="list"></div>
+
+  <div class="box">
+    <label for="url">PDF link ya file name</label>
+    <input type="text" id="url" placeholder="https://example.com/file.pdf  ya  notes.pdf">
+    <button class="btn" id="goUrl">Open</button>
+  </div>
+
+  <div class="box">
+    <label>Is device se PDF kholo</label>
+    <input type="file" id="file" accept="application/pdf,.pdf">
+  </div>
+
+  <div id="err"></div>
+  <div class="hint">
+    Viewer me: <b>Mouse/Touch drag</b> = PDF kisi bhi side move karo &nbsp;|&nbsp; <b>+ / &minus;</b> = zoom &nbsp;|&nbsp;
+    <b>Left/Right</b> = page ya move &nbsp;|&nbsp; <b>OK</b> = zoom step &nbsp;|&nbsp; <b>Back</b> = piche
+  </div>
+</div>
+
+<!-- ================= VIEWER ================= -->
+<div id="viewer">
+  <div id="stage" tabindex="0"><canvas id="cv"></canvas></div>
+
+  <div id="bar">
+    <button class="tb" id="bBack">&#9664; Library</button>
+    <div class="sep"></div>
+    <button class="tb" id="bPrev">&lsaquo; Prev</button>
+    <input type="number" id="pgIn" min="1" value="1">
+    <span class="lbl" id="pgTot">/ 1</span>
+    <button class="tb" id="bNext">Next &rsaquo;</button>
+    <div class="sep"></div>
+    <button class="tb" id="bZout">&minus;</button>
+    <span id="zl">100%</span>
+    <button class="tb" id="bZin">+</button>
+    <button class="tb" id="bFit">Fit</button>
+    <div class="sep"></div>
+    <button class="tb y" id="bSet">&#9881; Settings</button>
+    <button class="tb" id="bHide">&#128065; Hide</button>
+    <span id="title"></span>
+  </div>
+
+  <div id="hud">
+    <div class="pill" id="clock" style="display:none"></div><br>
+    <div class="pill t" id="tbadge" style="display:none"></div>
+  </div>
+
+  <button id="unhide">&#9664; Back</button>
+
+  <div id="settings">
+    <div class="row"><h2 style="flex:1">&#9881; Settings</h2><button class="tb" id="sClose">Close</button></div>
+
+    <h3>&#9200; Timer</h3>
+    <div class="row">
+      <button class="tb" id="tMinus">&minus;</button>
+      <input type="number" id="tmin" min="1" max="999" value="15">
+      <button class="tb" id="tPlus">+</button>
+      <span class="lbl">minutes</span>
+    </div>
+    <div class="row" id="chips"></div>
+    <button class="tb y wide" id="tStart">&#9654; Start timer</button>
+    <div id="tstat"></div>
+    <button class="tb wide" id="tCancel" style="display:none">&#10006; Cancel timer</button>
+    <button class="tb wide" id="tTest">&#128276; Test bell</button>
+
+    <h3>&#128337; Display</h3>
+    <button class="tb wide" id="oClock">Show time: OFF</button>
+    <button class="tb wide" id="o24">24-hour format: OFF</button>
+    <button class="tb wide" id="oBadge">Show timer on screen: ON</button>
+
+    <h3>&#128065; Screen</h3>
+    <button class="tb wide" id="sHide">Hide all buttons (sirf Back dikhega)</button>
+  </div>
+</div>
+
+<!-- ================= RING ================= -->
+<div id="ring">
+  <div class="bell">&#128276;</div>
+  <div class="big">Time's up!</div>
+  <div style="font-size:24px;color:#ccc" id="ringTxt"></div>
+  <button class="btn" id="ringStop">&#9209; STOP</button>
+</div>
+<div id="msg"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+<script>
+/* ============ ADD YOUR PDFs HERE ============
+   PDF files ko index.html wale folder me rakho, phir yahan list me add karo. */
+var PDFS = [
+  { name: "Some Applications of Trigonometry - Lecture 1", file: "trigonometry-lec1.pdf" }
+  // , { name: "Next chapter", file: "chapter2.pdf" }
+];
+/* ============================================ */
+
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var body = document.body, home = $("home"), viewer = $("viewer"), stage = $("stage"), cv = $("cv"), settings = $("settings");
+
+  function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function err(t) { $("err").textContent = t; }
+  var msgT = null;
+  function msg(t, ms) {
+    var m = $("msg"); m.textContent = t; m.style.display = "block";
+    if (msgT) { clearTimeout(msgT); }
+    if (ms) { msgT = setTimeout(function () { m.style.display = "none"; }, ms); }
+  }
+  function hideMsg() { $("msg").style.display = "none"; }
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+
+  if (typeof pdfjsLib === "undefined") {
+    err("PDF engine load nahi hua. Internet check karke page reload karo.");
+    return;
+  }
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+
+  /* ---------- settings (saved) ---------- */
+  var cfg = { clock: false, h24: false, badge: true };
+  try { var sc = JSON.parse(load("cfg") || "{}"); for (var kk in sc) { cfg[kk] = sc[kk]; } } catch (e) {}
+  function saveCfg() { save("cfg", JSON.stringify(cfg)); }
+
+  /* ---------- Library ---------- */
+  var list = $("list");
+  PDFS.forEach(function (p) {
+    var b = document.createElement("button");
+    b.className = "item"; b.textContent = "\uD83D\uDCC4  " + p.name;
+    b.onclick = function () { openUrl(p.file, p.name); };
+    list.appendChild(b);
+  });
+  function focusFirst() { var f = list.getElementsByTagName("button")[0]; if (f) { f.focus(); } }
+  focusFirst();
+
+  /* ---------- Open PDF ---------- */
+  var pdf = null, page = 1, wantPage = 1, total = 0, z = 1, rendering = false, pending = null, curKey = "";
+  var ZSTEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5];
+
+  function openUrl(u, name) {
+    err("");
+    u = (u || "").replace(/^\s+|\s+$/g, "");
+    if (!u) { err("PDF ka link ya naam likho."); return; }
+    start({ url: u, cMapUrl: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/cMaps/", cMapPacked: true }, name || u, u);
+  }
+  function start(src, name, key) {
+    msg("PDF load ho raha hai...");
+    pdfjsLib.getDocument(src).promise.then(function (doc) {
+      pdf = doc; total = doc.numPages; curKey = "pg:" + key; z = 1;
+      var saved = parseInt(load(curKey), 10);
+      page = (saved >= 1 && saved <= total) ? saved : 1; wantPage = page;
+      $("title").textContent = name;
+      $("pgTot").textContent = "/ " + total; $("pgIn").max = total;
+      home.style.display = "none"; viewer.style.display = "block";
+      body.className = "ui inview";
+      hideMsg(); stage.focus(); updZ(); render(page, false);
+    }, function (e) {
+      hideMsg();
+      err("PDF nahi khula. Naam/link check karo. (" + (e && e.message ? e.message : e) + ")");
+    });
+  }
+  $("goUrl").onclick = function () { openUrl($("url").value); };
+  $("url").onkeydown = function (e) { if (e.keyCode === 13) { openUrl(this.value); } e.stopPropagation(); };
+  $("file").onchange = function () {
+    var f = this.files && this.files[0]; if (!f) { return; }
+    var r = new FileReader();
+    r.onload = function () { start({ data: new Uint8Array(r.result) }, f.name, "local:" + f.name); };
+    r.readAsArrayBuffer(f);
+  };
+
+  /* ---------- Render ---------- */
+  function render(n, keep) {
+    if (!pdf) { return; }
+    if (rendering) { pending = { n: n, keep: keep }; return; }
+    rendering = true; page = n;
+    var fx = 0.5, fy = 0, sw = stage.scrollWidth, sh = stage.scrollHeight;
+    if (keep && sw > 0 && sh > 0) {
+      fx = (stage.scrollLeft + stage.clientWidth / 2) / sw;
+      fy = (stage.scrollTop + stage.clientHeight / 2) / sh;
+    }
+    pdf.getPage(n).then(function (pg) {
+      var v1 = pg.getViewport({ scale: 1 });
+      var fit = Math.min(stage.clientWidth / v1.width, stage.clientHeight / v1.height) * 0.98;
+      var cs = fit * z;
+      var cw = v1.width * cs, ch = v1.height * cs;
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      if (cw * ch * dpr * dpr > 12000000) { dpr = Math.sqrt(12000000 / (cw * ch)); }
+      var vp = pg.getViewport({ scale: cs * dpr });
+      var nc = document.createElement("canvas");
+      nc.width = Math.floor(vp.width); nc.height = Math.floor(vp.height);
+      nc.style.width = Math.floor(cw) + "px"; nc.style.height = Math.floor(ch) + "px";
+      return pg.render({ canvasContext: nc.getContext("2d"), viewport: vp }).promise.then(function () {
+        stage.replaceChild(nc, cv); cv = nc;
+      });
+    }).then(function () {
+      rendering = false;
+      $("pgIn").value = page; save(curKey, page);
+      if (keep) {
+        stage.scrollLeft = fx * stage.scrollWidth - stage.clientWidth / 2;
+        stage.scrollTop = fy * stage.scrollHeight - stage.clientHeight / 2;
+      } else {
+        stage.scrollTop = 0; stage.scrollLeft = (stage.scrollWidth - stage.clientWidth) / 2;
+      }
+      next();
+    }, function (e) {
+      rendering = false; msg("Page error: " + (e && e.message ? e.message : e), 3000); next();
+    });
+    function next() { if (pending) { var p = pending; pending = null; render(p.n, p.keep); } }
+  }
+  function updZ() { $("zl").textContent = Math.round(z * 100) + "%"; }
+  function setZ(nz) {
+    nz = Math.max(0.5, Math.min(5, nz));
+    if (Math.abs(nz - z) < 0.001) { return; }
+    z = nz; updZ(); render(wantPage, true);
+  }
+  function zoomIn() { for (var i = 0; i < ZSTEPS.length; i++) { if (ZSTEPS[i] > z + 0.001) { setZ(ZSTEPS[i]); return; } } }
+  function zoomOut() { for (var i = ZSTEPS.length - 1; i >= 0; i--) { if (ZSTEPS[i] < z - 0.001) { setZ(ZSTEPS[i]); return; } } }
+  function go(d) {
+    var n = wantPage + d;
+    if (n >= 1 && n <= total) { wantPage = n; render(n, false); }
+  }
+  $("pgIn").onchange = function () {
+    var n = parseInt(this.value, 10);
+    if (n >= 1 && n <= total) { wantPage = n; render(n, false); } else { this.value = page; }
+  };
+  $("pgIn").onkeydown = function (e) { if (e.keyCode === 13) { this.blur(); stage.focus(); } e.stopPropagation(); };
+
+  /* ---------- Drag (mouse) + Pinch (touch) ---------- */
+  var drag = false, sx = 0, sy = 0, sl = 0, st = 0;
+  stage.addEventListener("mousedown", function (e) {
+    if (e.button !== 0) { return; }
+    drag = true; sx = e.clientX; sy = e.clientY; sl = stage.scrollLeft; st = stage.scrollTop;
+    stage.className = "grabbing"; stage.focus(); e.preventDefault();
+  }, false);
+  document.addEventListener("mousemove", function (e) {
+    if (!drag) { return; }
+    stage.scrollLeft = sl - (e.clientX - sx); stage.scrollTop = st - (e.clientY - sy);
+  }, false);
+  document.addEventListener("mouseup", function () { if (drag) { drag = false; stage.className = ""; } }, false);
+  stage.addEventListener("wheel", function (e) {
+    if (e.ctrlKey) { e.preventDefault(); if (e.deltaY < 0) { zoomIn(); } else { zoomOut(); } }
+  }, false);
+
+  var pinch0 = 0, pinchZ = 1, pinchR = 1;
+  function tdist(t) { var dx = t[0].clientX - t[1].clientX, dy = t[0].clientY - t[1].clientY; return Math.sqrt(dx * dx + dy * dy); }
+  stage.addEventListener("touchstart", function (e) {
+    if (e.touches.length === 2) { pinch0 = tdist(e.touches); pinchZ = z; pinchR = 1; }
+  }, false);
+  stage.addEventListener("touchmove", function (e) {
+    if (e.touches.length === 2 && pinch0) {
+      e.preventDefault(); pinchR = tdist(e.touches) / pinch0;
+      msg(Math.round(Math.max(0.5, Math.min(5, pinchZ * pinchR)) * 100) + "%", 600);
+    }
+  }, false);
+  stage.addEventListener("touchend", function (e) {
+    if (pinch0 && e.touches.length < 2) { setZ(pinchZ * pinchR); pinch0 = 0; }
+  }, false);
+
+  /* ---------- Buttons ---------- */
+  function showUi() { body.className = "ui inview"; setTimeout(function () { render(wantPage, true); }, 30); $("bSet").focus(); }
+  function hideUi() { closeSettings(); body.className = "inview"; setTimeout(function () { render(wantPage, true); }, 30); $("unhide").focus(); }
+  function toLibrary() {
+    closeSettings(); viewer.style.display = "none"; home.style.display = "block"; body.className = ""; pdf = null; focusFirst();
+  }
+  $("bBack").onclick = toLibrary;
+  $("bPrev").onclick = function () { go(-1); };
+  $("bNext").onclick = function () { go(1); };
+  $("bZin").onclick = zoomIn; $("bZout").onclick = zoomOut;
+  $("bFit").onclick = function () { setZ(1); };
+  $("bHide").onclick = hideUi; $("sHide").onclick = hideUi; $("unhide").onclick = showUi;
+  $("bSet").onclick = function () { if (settings.className.indexOf("open") >= 0) { closeSettings(); } else { openSettings(); } };
+  $("sClose").onclick = closeSettings;
+  window.onresize = function () { if (pdf) { render(wantPage, true); } };
+
+  function settingsOpen() { return settings.className.indexOf("open") >= 0; }
+  function openSettings() { settings.className = "open"; $("tStart").focus(); refreshSettings(); }
+  function closeSettings() { settings.className = ""; if (pdf) { stage.focus(); } }
+
+  /* ---------- Clock / display options ---------- */
+  function refreshSettings() {
+    $("oClock").textContent = "Show time: " + (cfg.clock ? "ON" : "OFF");
+    $("o24").textContent = "24-hour format: " + (cfg.h24 ? "ON" : "OFF");
+    $("oBadge").textContent = "Show timer on screen: " + (cfg.badge ? "ON" : "OFF");
+    $("tCancel").style.display = timerEnd ? "block" : "none";
+    $("tStart").style.display = timerEnd ? "none" : "block";
+    if (!timerEnd) { $("tstat").textContent = ""; }
+  }
+  $("oClock").onclick = function () { cfg.clock = !cfg.clock; saveCfg(); refreshSettings(); tick(); };
+  $("o24").onclick = function () { cfg.h24 = !cfg.h24; saveCfg(); refreshSettings(); tick(); };
+  $("oBadge").onclick = function () { cfg.badge = !cfg.badge; saveCfg(); refreshSettings(); tick(); };
+
+  function clockText() {
+    var d = new Date(), h = d.getHours(), s = pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+    if (cfg.h24) { return pad(h) + ":" + s; }
+    var ap = h >= 12 ? "PM" : "AM"; h = h % 12; if (h === 0) { h = 12; }
+    return h + ":" + s + " " + ap;
+  }
+  function fmtLeft(ms) {
+    var t = Math.max(0, Math.ceil(ms / 1000)), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+    return (h > 0 ? h + ":" + pad(m) : m) + ":" + pad(s);
+  }
+
+  /* ---------- Timer + Bell ---------- */
+  var timerEnd = parseInt(load("timerEnd"), 10) || 0, timerMin = 0;
+  if (timerEnd && timerEnd <= new Date().getTime()) { timerEnd = 0; save("timerEnd", ""); }
+  var audioCtx = null, ringing = false, ringInt = null;
+
+  function ac() {
+    if (!audioCtx) {
+      var C = window.AudioContext || window.webkitAudioContext;
+      if (C) { try { audioCtx = new C(); } catch (e) { audioCtx = null; } }
+    }
+    if (audioCtx && audioCtx.state === "suspended" && audioCtx.resume) { try { audioCtx.resume(); } catch (e) {} }
+    return audioCtx;
+  }
+  document.addEventListener("click", function () { ac(); }, false);
+  document.addEventListener("touchstart", function () { ac(); }, false);
+
+  function strike() {
+    var a = ac(); if (!a) { return; }
+    var t = a.currentTime, parts = [[1, 0.5], [2, 0.22], [2.76, 0.2], [5.4, 0.08]], i;
+    for (i = 0; i < parts.length; i++) {
+      var o = a.createOscillator(), g = a.createGain();
+      o.type = "sine"; o.frequency.value = 720 * parts[i][0];
+      g.gain.setValueAtTime(parts[i][1], t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 1.3);
+      o.connect(g); g.connect(a.destination);
+      o.start(t); o.stop(t + 1.4);
+    }
+  }
+  function burst() { // tan ... tan ... tan
+    strike(); setTimeout(strike, 650); setTimeout(strike, 1300);
+    try { if (navigator.vibrate) { navigator.vibrate([300, 200, 300, 200, 300]); } } catch (e) {}
+  }
+  function startRing(txt) {
+    if (ringing) { return; }
+    ringing = true; $("ringTxt").textContent = txt || "";
+    $("ring").style.display = "block"; $("ringStop").focus();
+    burst(); ringInt = setInterval(burst, 3200);
+  }
+  function stopRing() {
+    ringing = false; if (ringInt) { clearInterval(ringInt); ringInt = null; }
+    $("ring").style.display = "none";
+    if (pdf) { stage.focus(); }
+  }
+  $("ringStop").onclick = stopRing;
+
+  function startTimer() {
+    var m = parseFloat($("tmin").value);
+    if (!(m > 0)) { msg("Sahi minutes likho", 1500); return; }
+    ac(); timerMin = m;
+    timerEnd = new Date().getTime() + Math.round(m * 60000);
+    save("timerEnd", timerEnd); refreshSettings(); tick();
+    msg("Timer " + m + " min set", 1500);
+  }
+  function cancelTimer() { timerEnd = 0; save("timerEnd", ""); refreshSettings(); tick(); }
+  $("tStart").onclick = startTimer; $("tCancel").onclick = cancelTimer;
+  $("tTest").onclick = function () { ac(); burst(); };
+  function setMin(v) { v = Math.max(1, Math.min(999, v)); $("tmin").value = v; }
+  $("tMinus").onclick = function () { setMin((parseInt($("tmin").value, 10) || 1) - 1); };
+  $("tPlus").onclick = function () { setMin((parseInt($("tmin").value, 10) || 0) + 1); };
+  $("tmin").onkeydown = function (e) {
+    if (e.keyCode === 13) { startTimer(); }
+    if (e.keyCode !== 38 && e.keyCode !== 40) { e.stopPropagation(); }
+  };
+  var PRE = [1, 5, 10, 15, 20, 30, 45, 60];
+  PRE.forEach(function (m) {
+    var c = document.createElement("button"); c.className = "chip"; c.textContent = m + " min";
+    c.onclick = function () { setMin(m); }; $("chips").appendChild(c);
+  });
+
+  function tick() {
+    var ck = $("clock"), tb = $("tbadge");
+    if (cfg.clock) { ck.style.display = "inline-block"; ck.textContent = clockText(); } else { ck.style.display = "none"; }
+    if (timerEnd) {
+      var left = timerEnd - new Date().getTime();
+      if (left <= 0) {
+        timerEnd = 0; save("timerEnd", ""); refreshSettings();
+        tb.style.display = "none";
+        startRing(timerMin ? timerMin + " minute timer complete" : "Timer complete");
+      } else {
+        var txt = fmtLeft(left);
+        $("tstat").textContent = "Remaining: " + txt;
+        if (cfg.badge) { tb.style.display = "inline-block"; tb.textContent = "\u23F3 " + txt; } else { tb.style.display = "none"; }
+      }
+    } else { tb.style.display = "none"; }
+  }
+  setInterval(tick, 250); tick(); refreshSettings();
+
+  /* ---------- Keyboard / TV remote ---------- */
+  function isBack(k) { return k === 27 || k === 8 || k === 4 || k === 10009 || k === 461; }
+  function onBack() {
+    if (ringing) { stopRing(); }
+    else if (settingsOpen()) { closeSettings(); }
+    else if (!/ui/.test(body.className)) { showUi(); }
+    else { toLibrary(); }
+  }
+  function moveFocus(dir) {
+    var els = settings.querySelectorAll("button, input"), arr = [], i, idx = -1;
+    for (i = 0; i < els.length; i++) { if (els[i].offsetParent !== null) { arr.push(els[i]); } }
+    for (i = 0; i < arr.length; i++) { if (arr[i] === document.activeElement) { idx = i; } }
+    var n = idx + dir; if (n < 0) { n = 0; } if (n >= arr.length) { n = arr.length - 1; }
+    if (arr[n]) { arr[n].focus(); }
+  }
+
+  document.onkeydown = function (e) {
+    var k = e.keyCode;
+    if (ringing) { if (isBack(k) || k === 13) { stopRing(); e.preventDefault(); } return; }
+
+    if (viewer.style.display === "block") {
+      var tag = (document.activeElement && document.activeElement.tagName) || "";
+      if (isBack(k)) { if (!(k === 8 && tag === "INPUT")) { onBack(); e.preventDefault(); } return; }
+
+      if (settingsOpen()) {
+        if (k === 40 || k === 39 && tag !== "INPUT") { moveFocus(1); e.preventDefault(); }
+        else if (k === 38 || k === 37 && tag !== "INPUT") { moveFocus(-1); e.preventDefault(); }
+        return;
+      }
+      if (tag === "INPUT") { return; }
+      if (!/ui/.test(body.className) && (k === 13) && document.activeElement === $("unhide")) { return; }
+
+      var atL = stage.scrollLeft <= 2, atR = stage.scrollLeft + stage.clientWidth >= stage.scrollWidth - 2;
+      if (k === 37) {
+        if (z <= 1.001 || atL) { go(-1); } else { stage.scrollLeft -= 120; }
+        e.preventDefault();
+      } else if (k === 39) {
+        if (z <= 1.001 || atR) { go(1); } else { stage.scrollLeft += 120; }
+        e.preventDefault();
+      } else if (k === 38) { stage.scrollTop -= 120; e.preventDefault(); }
+      else if (k === 40) { stage.scrollTop += 120; e.preventDefault(); }
+      else if (k === 33) { go(-1); e.preventDefault(); }
+      else if (k === 34) { go(1); e.preventDefault(); }
+      else if (k === 187 || k === 107 || k === 61) { zoomIn(); }
+      else if (k === 189 || k === 109 || k === 173) { zoomOut(); }
+      else if (k === 13 && document.activeElement === stage) {
+        if (z >= 3) { setZ(1); } else { zoomIn(); }
+        e.preventDefault();
+      }
+      else if (k === 83) { openSettings(); }
+      else if (k === 72) { if (/ui/.test(body.className)) { hideUi(); } else { showUi(); } }
+    } else {
+      var items = list.getElementsByTagName("button"), idx = -1, j;
+      for (j = 0; j < items.length; j++) { if (items[j] === document.activeElement) { idx = j; } }
+      if (k === 40 && idx >= 0 && idx < items.length - 1) { items[idx + 1].focus(); e.preventDefault(); }
+      else if (k === 38 && idx > 0) { items[idx - 1].focus(); e.preventDefault(); }
+    }
+  };
+
+  /* ---------- ?pdf=file.pdf ---------- */
+  var m = /[?&]pdf=([^&]+)/.exec(location.search);
+  if (m) { openUrl(decodeURIComponent(m[1])); }
+})();
+</script>
+</body>
+</html>
